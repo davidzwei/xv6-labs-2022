@@ -9,6 +9,8 @@
 #include "riscv.h"
 #include "defs.h"
 
+int ref_cnt[PHYSTOP/PGSIZE] = {0};
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -23,6 +25,17 @@ struct {
   struct run *freelist;
 } kmem;
 
+void increase_ref(uint64 pa)
+{
+  if((uint64)pa % PGSIZE != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP){
+    panic("inc_ref 1");
+  }  
+  
+  acquire(&kmem.lock);
+  ref_cnt[(uint64)pa/PGSIZE]++;
+  release(&kmem.lock);
+}
+
 void
 kinit()
 {
@@ -35,8 +48,10 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
+    ref_cnt[(uint64)p/PGSIZE] = 1;
     kfree(p);
+  }
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,6 +65,19 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+  
+  acquire(&kmem.lock);
+  if(ref_cnt[(uint64)pa/PGSIZE] < 1){
+    printf("ref_cnt[(uint64)pa/PGSIZE]=%d\n",ref_cnt[(uint64)pa/PGSIZE]);
+    panic("kfree ref error");
+  }
+  ref_cnt[(uint64)pa/PGSIZE]--;
+  int tmp_ref_cnt = ref_cnt[(uint64)pa/PGSIZE];
+  release(&kmem.lock);
+
+  if(tmp_ref_cnt>0){
+    return;
+  }
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -72,11 +100,22 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r){
     kmem.freelist = r->next;
+    ref_cnt[(uint64)r/PGSIZE] = 1;
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+int
+get_ref(uint64 pa) {
+  int count;
+  acquire(&kmem.lock);
+  count = ref_cnt[pa / PGSIZE];
+  release(&kmem.lock);
+  return count;
 }

@@ -67,6 +67,31 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15){
+    // page fault(Store/AMO Page Fault)
+    uint64 fault_va = r_stval();
+    uint64 fault_pg = PGROUNDDOWN(fault_va);
+
+    pte_t *pte = walk(p->pagetable, fault_pg, 0);
+
+    if(pte != 0){
+
+      uint64 pa = PTE2PA(*pte);
+
+      if(get_ref(pa) == 1){
+        *pte |= PTE_W;
+      } 
+      else {
+        char *mem = kalloc();
+        if(mem == 0){
+          setkilled(p);
+        } else {
+          memmove(mem, (char*)pa, PGSIZE);
+          kfree((void*)pa);
+          *pte = PA2PTE(mem) | PTE_FLAGS(*pte) | PTE_W;
+        }
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
