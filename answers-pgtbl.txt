@@ -1,0 +1,13 @@
+Q1: Which other xv6 system call(s) could be made faster using this shared page? Explain how.
+
+A: uptime() could be made faster. The kernel could store the current ticks value in the shared page and update it on each timer interrupt. User space could then read ticks directly without trapping into the kernel.
+
+---
+
+Q2: Explain the output of vmprint in terms of Fig 3-4 from the text. What does page 0 contain? What is in page 2? When running in user mode, could the process read/write the memory mapped by page 1? What does the third to last page contain?
+
+A: The output shows the three-level Sv39 page table tree (L2 -> L1 -> L0) as described in Fig 3-4.
+- Page 0 contains the text and data of the process (code segment, starting at virtual address 0).
+- Page 2 is the user stack.
+- Page 1 is the guard page below the stack; it is not mapped with PTE_U, so the process cannot read/write it in user mode — accessing it causes a page fault.
+- The third to last page contains the trapframe, used to save/restore registers on syscall/trap entry.
