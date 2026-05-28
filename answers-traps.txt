@@ -1,0 +1,66 @@
+Q1: Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+
+A: a2 holds 13.
+   From the assembly:
+     2c: li a2,13
+   RISC-V passes arguments in registers a0-a7.
+   In main's call to printf("%d %d\n", f(8)+1, 13):
+   a0 = format string, a1 = 12 (f(8)+1), a2 = 13.
+
+---
+
+Q2: Where is the call to function f in the assembly code for main? Where is the call to g?
+
+A: There is no explicit call to f or g. The compiler inlined both functions.
+   The C code f(8)+1 was optimized: the result (12) is loaded directly into a1 at address 0x2e
+   with "li a1,12". No call instruction is generated.
+
+---
+
+Q3: At what address is the function printf located?
+
+A: printf is at address 0x658.
+
+   1. auipc at 0x38: ra = PC + (0x0 << 12) = 0x38
+   2. jalr 1568(ra): target = 0x38 + 1568 = 56 + 1568 = 1624 = 0x658
+
+   Confirmed by the assembler comment: "jalr 1568(ra) # 658 <printf>"
+
+---
+
+Q4: What value is in the register ra just after the jalr to printf in main?
+
+A: 0x40.
+   jalr saves PC+4 into ra before jumping. The jalr is at 0x3c, so ra = 0x3c + 4 = 0x40.
+
+---
+
+Q5: What is the output of:
+   unsigned int i = 0x00646c72;
+   printf("H%x Wo%s", 57616, &i);
+
+A: The output is "He110 World".
+   - 57616 in hex is 0xe110, so %x prints "e110".
+   - i = 0x00646c72. On little-endian RISC-V, bytes in memory from lowest to highest address:
+       0x72 = 'r', 0x6c = 'l', 0x64 = 'd', 0x00 = '\0'
+     so %s prints "rld".
+   - Full output: "He110 World"
+
+---
+
+Q6: If RISC-V were big-endian, what would you set i to in order to yield the same output?
+    Would you need to change 57616?
+
+A: i would need to be 0x726c6400.
+   On big-endian, the most significant byte is stored at the lowest address, so to get
+   bytes 'r','l','d','\0' in memory order, i = 0x726c6400.
+   57616 does not need to change — %x prints the integer value, which is endian-independent.
+
+---
+
+Q7: In the following code, what is going to be printed after 'y='? Why does this happen?
+   printf("x=%d y=%d", 3);
+
+A: A garbage (undefined) value will be printed after "y=".
+   printf expects a second integer argument in register a2, but only one argument (3) was passed.
+   a2 contains whatever value happened to be in it before the call — uninitialized register content.
